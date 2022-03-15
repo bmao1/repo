@@ -21,12 +21,12 @@ start presto cli
 `presto --catalog hive --debug`
 
 create table 
-`create table hive.alluxio.pqtest (col1 VARCHAR(10),col2  VARCHAR(10)) with (format = 'parquet', external_location = 'alluxio:///delta/pqtest');`
+`create table hive.alluxio.tablename (schema_here) with (format = 'parquet', external_location = 'alluxio:///delta/patient')`
 
 test query
-`select col1 from hive.alluxio.pqtest;`
+`select oneaddr.state from hive.alluxio.patient, UNNEST(address) as oneaddr`
 
 
-### schema for FHIR should come from presto_schema_gen.py or https://github.com/bmao1/FHIR_ETL/blob/main/presto_schema_gen.py
+ ** schema for FHIR should come from presto_schema_gen.py or https://github.com/bmao1/FHIR_ETL/blob/main/presto_schema_gen.py **
 
 
