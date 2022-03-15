@@ -455,7 +455,7 @@ Classifier_template = {
       ]
    },
    "modifierExtension":[{"url":"http://fhir-registry.smarthealthit.org/StructureDefinition/nlp-clissifier",
-                     "valueString":"Covid classifier v1"}]
+                     "valueInteger": 1}]
 }
 def buildClassifier(i2b2):
     url = 'http://tmill-desktop:8000/covid-19/is_covid_positive'
