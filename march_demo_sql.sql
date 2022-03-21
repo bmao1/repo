@@ -1,5 +1,3 @@
--- Query 1 covid count
-
 with classifier as (
 SELECT distinct subject.reference_id_aa as subject_id
     , encounter.reference_id_aa as encounter_id 
@@ -43,8 +41,9 @@ WHERE ((birthdate IS NOT NULL) AND (gender IS NOT NULL))
 
 dx as (SELECT distinct subject.reference_id_aa as subject_id
     , encounter.reference_id_aa as encounter_id 
-    , onsetdatetime as dx_date
-    , codecoding.code as dx_code
+    , onsetdatetime as enct_date
+    , 'dx U07.1' as test_method
+    , 'Unavailable' as covid_result
 FROM "delta"."condition" , unnest(code.coding) t(codecoding)
 where codecoding.code = 'U07.1'
 ), 
@@ -53,28 +52,21 @@ join1 as (
 select 
     coalesce(l.encounter_id, c.encounter_id) as encounter_id
     , coalesce(l.subject_id, c.subject_id) as subject_id
-    , substr(coalesce(l.enct_date, c.enct_date),1,7) as enct_date
-    , l.covid_lab_test
-    , c.covid_classifier
+    , substr(coalesce(l.enct_date, c.enct_date),1,10) as enct_date
+    , case when covid_lab_test in ('Positive', 'Negative') then 'Lab_test'
+           when covid_lab_test not in ('Positive', 'Negative')  and covid_classifier in ('Positive', 'Negative') then 'covid_classifier' 
+           when covid_lab_test = 'Unknown' and covid_classifier not in ('Positive', 'Negative') then 'Lab_test'
+           else 'Unknown' end as test_method 
+    , case when covid_lab_test in ('Positive', 'Negative') then covid_lab_test
+           when covid_lab_test not in ('Positive', 'Negative')  and covid_classifier in ('Positive', 'Negative') then covid_classifier 
+           else 'Unavailable' end as covid_result
 from 
     lab_test l
     full join 
     classifier c
     on l.encounter_id = c.encounter_id and l.subject_id = c.subject_id
-), 
-
-join2 as (select 
-    coalesce(j.encounter_id, c.encounter_id) as encounter_id
-    , coalesce(j.subject_id, c.subject_id) as subject_id
-    , substr(coalesce(j.enct_date, c.dx_date),1,7) as enct_date
-    , covid_lab_test
-    , covid_classifier
-    , dx_code
-from 
-    join1 j
-    full join 
-    dx c
-    on j.encounter_id = c.encounter_id and j.subject_id = c.subject_id
+    where covid_lab_test is not null 
+        or covid_classifier is not null
 ),
 
 
@@ -82,36 +74,41 @@ from
 combine as (
     select distinct
      j.encounter_id
-    , enct_date
-    , covid_lab_test
-    , covid_classifier
-    , dx_code
-    , p.gender 
+    , date(date_trunc('week', date_parse(enct_date,'%Y-%m-%d')))  as enct_date
+    , test_method
+    , covid_result
+    , case when p.gender is not null then gender else 'Unavailable' end as gender
     , (CASE WHEN (p.age < 19) THEN '0-18' 
             WHEN (p.age BETWEEN 19 AND 44) THEN '19-44' 
             WHEN (p.age BETWEEN 45 AND 64) THEN '45-64' 
             WHEN (p.age BETWEEN 65 AND 84) THEN '65-84' 
             WHEN (p.age BETWEEN 85 AND 300) THEN '85+' ELSE '?' END) as age_group
-    , p.race
+    , case when p.race is not null then race else 'Unavailable' end as race
 from 
-    join2 j
+    (select * from join1 union all select * from dx ) j
     left join 
     patient_demo p
     on j.subject_id = p.subject_id
 )
 
 select enct_date
-    , covid_lab_test
-    , covid_classifier
-    , dx_code
+    , test_method
+    , covid_result
     , gender
     , age_group
     , race
-    
     , count(distinct encounter_id) as cnt
 from combine
-where enct_date like '2021%'
-group by cube (enct_date, covid_lab_test, covid_classifier, dx_code, gender, age_group, race)
+where year(enct_date) = 2021
+group by cube (enct_date, test_method, covid_result, gender, age_group, race)
+
+
+
+
+
+
+
+
 
 
 
@@ -165,23 +162,46 @@ combine as (
 select a.encounter_id
     , a.display
     , a.code
-    , substr(coalesce(a.clin_date, b.enct_date),1,7) as enct_date
+    , substr(coalesce(a.clin_date, b.enct_date),1,10) as enct_date
 from symptom a
     join lab_test b
     on a.encounter_id = b.encounter_id
         and a.subject_id = b.subject_id
 )
 
-/*
-select distinct display
-    , enct_date
+select enct_date
+    , symptoms
     , count(distinct encounter_id) as cnt
-from combine
-group by cube (enct_date, display)
-*/
+from
+    (select date(date_trunc('week', date_parse(enct_date,'%Y-%m-%d')))  as enct_date
+        , encounter_id
+        , case code when '28743005' then 'Cough'
+                    when '62315008' then 'Diarrhea'
+                    when '84229001' then 'Fatigue'
+                    when '367391008' then 'Fatigue'
+                    when '43724002' then 'Fever or chills'
+                    when '103001002' then 'Fever or chills'
+                    when '426000000' then 'Fever or chills'
+                    when '25064002' then 'Headache'
+                    when '21522001' then 'Muscle or body aches'
+                    when '29857009' then 'Muscle or body aches'
+                    when '57676002' then 'Muscle or body aches'
+                    when '68962001' then 'Muscle or body aches'
+                    when '422587007' then 'Nausea or vomiting'
+                    when '422400008' then 'Nausea or vomiting'
+                    when '44169009' then 'New loss of taste or smell'
+                    when '36955009' then 'New loss of taste or smell'
+                    when '267036007' then 'Shortness of breath or difficulty breathing'
+                    when '162397003' then 'Sore throat'
+                    end as symptoms
+        from combine
+    )
+where symptoms is not null
+group by cube (enct_date, symptoms)
 
 
 
+/*
 select enct_date
     , "LOSS OF TASTE"
     , "DIFFICULTY BREATHING"
@@ -200,6 +220,12 @@ from (
     from combine
     )
 group by cube (enct_date, "LOSS OF TASTE", "DIFFICULTY BREATHING", "JOINT PAIN", "SORE THROAT", "FATIGUED")
+*/
+
+
+
+
+
 
 
 
