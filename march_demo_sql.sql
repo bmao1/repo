@@ -228,6 +228,88 @@ group by cube (enct_date, "LOSS OF TASTE", "DIFFICULTY BREATHING", "JOINT PAIN",
 
 
 
+---------  symptoms v4
+
+
+with encounter as (
+    select distinct enct.reference_id_aa as encounter_id
+        , subject.reference_id_aa as subject_id
+        , min(substr("date", 1, 10)) as enct_date
+    from documentreference, unnest(context.encounter) t(enct)
+    group by enct.reference_id_aa, subject.reference_id_aa
+),
+
+
+symptom as (SELECT subject.reference_id_aa as subject_id
+    , encounter.reference_id_aa as encounter_id
+    , codecoding.code as symptom_code
+    , codecoding.system as symptom_code_system
+    , codecoding.display_aa as display
+    , modext.valuedate as clin_date
+FROM "delta"."observation"
+    , unnest(modifierExtension) t(modext)
+    , unnest(code.coding) t(codecoding)
+where modext.url = 'http://fhir-registry.smarthealthit.org/StructureDefinition/nlp-polarity' and modext.valueinteger = 0
+    and codecoding.system = 'http://snomed.info/sct'
+    and codecoding.code in ('68235000','64531003','49727002','11833005','28743005','62315008','84229001','367391008','43724002','103001002','426000000','25064002','21522001','29857009','57676002','68962001','422587007','422400008','44169009','36955009','267036007','162397003')
+-- limit 5
+),
+
+combine as (
+select distinct e.encounter_id
+    , e.subject_id
+    , date(date_trunc('week', date_parse(e.enct_date,'%Y-%m-%d')))  as enct_date 
+    , case symptom_code when '68235000' then 'Congestion or runny nose'
+                        when '64531003' then 'Congestion or runny nose'
+                        when '49727002' then 'Cough'
+                        when '11833005' then 'Cough'
+                        when '28743005' then 'Cough'
+                        when '62315008' then 'Diarrhea'
+                        when '84229001' then 'Fatigue'
+                        when '367391008' then 'Fatigue'
+                        when '43724002' then 'Fever or chills'
+                        when '103001002' then 'Fever or chills'
+                        when '426000000' then 'Fever or chills'
+                        when '25064002' then 'Headache'
+                        when '21522001' then 'Muscle or body aches'
+                        when '29857009' then 'Muscle or body aches'
+                        when '57676002' then 'Muscle or body aches'
+                        when '68962001' then 'Muscle or body aches'
+                        when '422587007' then 'Nausea or vomiting'
+                        when '422400008' then 'Nausea or vomiting'
+                        when '44169009' then 'New loss of taste or smell'
+                        when '36955009' then 'New loss of taste or smell'
+                        when '267036007' then 'Shortness of breath or difficulty breathing'
+                        when '162397003' then 'Sore throat'
+                        else 'Asymptomatic' end as symptoms
+from encounter e
+    left join 
+    symptom s
+    on e.encounter_id = s.encounter_id
+)
+
+select enct_date
+    , symptoms
+    , count(distinct encounter_id) as cnt
+from combine
+where year(enct_date) = 2021
+group by cube(enct_date, symptoms)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
