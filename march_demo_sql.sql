@@ -402,6 +402,7 @@ group by cube(enct_date, symptoms, gender, age_group, race, postalcode3dig)
 
 ---------  symptoms v6
 
+
 with encounter as (
     select distinct enct.reference_id_aa as encounter_id
         , subject.reference_id_aa as subject_id
@@ -475,7 +476,7 @@ select distinct e.encounter_id
                         when '36955009' then 'New loss of taste or smell'
                         when '267036007' then 'Shortness of breath or difficulty breathing'
                         when '162397003' then 'Sore throat'
-                        else 'Asymptomatic' end as symptoms
+                        else 'Other Symptoms' end as symptoms
     , case when p.gender in ('male', 'female') then gender else 'Missing' end as gender
     , (CASE WHEN (p.age < 19) THEN '0-18' 
             WHEN (p.age BETWEEN 19 AND 44) THEN '19-44' 
@@ -509,32 +510,6 @@ select enct_date
 from combine
 where year(enct_date) = 2021
 group by cube(enct_date, symptoms, gender, age_group, race, covid_diagnosis)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
