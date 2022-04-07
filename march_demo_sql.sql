@@ -399,7 +399,7 @@ group by cube(enct_date, symptoms, gender, age_group, race, covid_diagnosis, cov
 
 
 
--- symptom 7.1
+-- symptom 7.2
 
 
 
@@ -444,7 +444,7 @@ dx as (SELECT distinct encounter.reference_id_aa as encounter_id
     , subject.reference_id_aa as subject_id
     , onsetdatetime as enct_date
     , 'dx U07.1' as test_method
-    , 'Positive' as covid_result
+    , 'DX Positive' as covid_result
 FROM "delta"."condition" , unnest(code.coding) t(codecoding)
 where codecoding.code = 'U07.1'
 ), 
@@ -452,8 +452,8 @@ where codecoding.code = 'U07.1'
 lab_test as (SELECT distinct subject.reference_id_aa as subject_id
     , encounter.reference_id_aa as encounter_id
     , effectiveDatetime as enct_date
-    , case when valuecode.system = 'http://snomed.info/sct' and valuecode.code = '260385009' then 'Negative'
-           when valuecode.system = 'http://snomed.info/sct' and valuecode.code = '10828004' then 'Positive'
+    , case when valuecode.system = 'http://snomed.info/sct' and valuecode.code = '260385009' then 'PCR Negative'
+           when valuecode.system = 'http://snomed.info/sct' and valuecode.code = '10828004' then 'PCR Positive'
            end as covid_lab_test
 FROM "delta"."observation"
     , unnest(valueCodeableConcept.coding) t(valuecode)
@@ -469,8 +469,8 @@ classifier as (
 SELECT distinct subject.reference_id_aa as subject_id
     , encounter.reference_id_aa as encounter_id 
     , effectiveDatetime as enct_date
-    , case when valuecode.system = 'http://snomed.info/sct' and valuecode.code = '260385009' then 'Negative'
-           when valuecode.system = 'http://snomed.info/sct' and valuecode.code = '10828004' then 'Positive'
+    , case when valuecode.system = 'http://snomed.info/sct' and valuecode.code = '260385009' then 'NLP Negative'
+           when valuecode.system = 'http://snomed.info/sct' and valuecode.code = '10828004' then 'NLP Positive'
            end as covid_classifier
 FROM "delta"."observation", unnest(modifierExtension) t(modext), unnest(valueCodeableConcept.coding) t(valuecode)
 where modext.url = 'http://fhir-registry.smarthealthit.org/StructureDefinition/nlp-classifier' and modext.valueInteger = 1
@@ -547,6 +547,7 @@ select enct_date
 from combine
 where year(enct_date) >= 2016 and enct_date <= now()
 group by cube(enct_date, symptoms, gender, age_group, race, covid_diagnosis, covid_lab_test, covid_classifier)
+
 
 
 
