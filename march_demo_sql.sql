@@ -711,6 +711,130 @@ group by cube(enct_date, symptoms, gender, age_group, race, covid_diagnosis, cov
 
 
 
+-- temporal events
+
+with encounter as (
+    select distinct enct.reference_id_aa as encounter_id
+        , subject.reference_id_aa as subject_id
+        , min(substr("date", 1, 10)) as enct_date
+    from documentreference, unnest(context.encounter) t(enct)
+    group by enct.reference_id_aa, subject.reference_id_aa
+),
+
+
+symptom as (SELECT distinct subject.reference_id_aa as subject_id
+    , encounter.reference_id_aa as encounter_id
+    , codecoding.code as symptom_code
+    , codecoding.system as symptom_code_system
+    , codecoding.display_aa as display
+FROM "delta"."observation"
+    , unnest(modifierExtension) t(modext)
+    , unnest(code.coding) t(codecoding)
+where modext.url = 'http://fhir-registry.smarthealthit.org/StructureDefinition/nlp-polarity' and modext.valueinteger = 0
+    and codecoding.system = 'http://snomed.info/sct'
+    and codecoding.code in ('68235000','64531003','49727002','11833005','28743005','62315008','84229001','367391008','43724002','103001002','426000000','25064002','21522001','29857009','57676002','68962001','422587007','422400008','44169009','36955009','267036007','162397003')
+-- limit 5
+),
+
+fhir_patient as (SELECT DISTINCT
+    gender
+, "date"("concat"(birthdate, '-01-01')) dob
+, ("year"("now"()) - CAST(birthdate AS int)) age
+, (CASE WHEN (ext.valuecoding.code IN ('1002-5', '2028-9', '2054-5', '2076-8', '2106-3')) THEN ext.valuecoding.display_aa ELSE null END) race
+, addr.postalcode postalcode
+, id subject_id
+FROM
+  patient
+, UNNEST(extension) t (ext)
+, UNNEST(address) t (addr)
+WHERE ((birthdate IS NOT NULL) AND (gender IS NOT NULL))
+),
+
+dx as (SELECT distinct encounter.reference_id_aa as encounter_id 
+    , subject.reference_id_aa as subject_id
+    , onsetdatetime as enct_date
+    , 'dx U07.1' as test_method
+    , 'DX Positive' as covid_result
+FROM "delta"."condition" , unnest(code.coding) t(codecoding)
+where codecoding.code = 'U07.1'
+), 
+
+lab_test as (SELECT distinct subject.reference_id_aa as subject_id
+    , encounter.reference_id_aa as encounter_id
+    , effectiveDatetime as enct_date
+    , case when valuecode.system = 'http://snomed.info/sct' and valuecode.code = '260385009' then 'PCR Negative'
+           when valuecode.system = 'http://snomed.info/sct' and valuecode.code = '10828004' then 'PCR Positive'
+           end as covid_lab_test
+FROM "delta"."observation"
+    , unnest(valueCodeableConcept.coding) t(valuecode)
+    , unnest(code.coding) t(codecoding)
+    , unnest(category) t(categ)
+    , unnest(categ.coding) t(categcode)
+where modifierExtension is null 
+    and codecoding.code in ('94500-6','95406-5')
+    and categcode.code = 'laboratory'
+),
+
+classifier as (
+SELECT distinct subject.reference_id_aa as subject_id
+    , encounter.reference_id_aa as encounter_id 
+    , effectiveDatetime as enct_date
+    , case when valuecode.system = 'http://snomed.info/sct' and valuecode.code = '260385009' then 'NLP Negative'
+           when valuecode.system = 'http://snomed.info/sct' and valuecode.code = '10828004' then 'NLP Positive'
+           end as covid_classifier
+FROM "delta"."observation", unnest(modifierExtension) t(modext), unnest(valueCodeableConcept.coding) t(valuecode)
+where modext.url = 'http://fhir-registry.smarthealthit.org/StructureDefinition/nlp-classifier' and modext.valueInteger = 1
+),
+
+combine as (
+select distinct e.encounter_id
+    , date_trunc('day', date_parse(e.enct_date,'%Y-%m-%d'))  as enct_date 
+    , date_trunc('day', date_parse(substr(dx.enct_date,1,10),'%Y-%m-%d')) dx_date
+    , date_trunc('day', date_parse(substr(l.enct_date,1,10),'%Y-%m-%d')) lab_date
+  
+from encounter e
+    left join 
+    symptom s
+    on e.encounter_id = s.encounter_id
+    left join 
+    fhir_patient p
+    on e.subject_id = p.subject_id
+    left join
+    dx
+    on e.encounter_id = dx.encounter_id
+    left join 
+    lab_test l
+    on e.encounter_id = l.encounter_id
+    left join 
+    classifier c
+    on e.encounter_id = c.encounter_id
+),
+
+temp as (
+    select encounter_id
+        , case when dx_date is not null then date_diff('day', enct_date, dx_date) end as dx_delay
+        , case when lab_date is not null then date_diff('day', enct_date, lab_date) end as lab_delay
+    from combine
+    where dx_date is not null or lab_date is not null
+),
+
+temp2 as (
+select encounter_id
+    , min(dx_delay) as min_dx_delay
+    , max(dx_delay) as max_dx_delay
+    , max(dx_delay) - min(dx_delay) as multi_dx_gap
+    , min(lab_delay) as min_lab_delay
+    , max(lab_delay) as max_lab_delay
+    , max(lab_delay) - min(lab_delay) as multi_lab_gap
+from temp
+group by encounter_id
+)
+
+select min_lab_delay 
+    , count(distinct encounter_id) as cnt
+from temp2
+group by min_lab_delay
+order by min_lab_delay
 
 
 
