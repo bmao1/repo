@@ -125,7 +125,7 @@ group by cube (enct_date, test_method, covid_result, gender, age_group, race)
 
 ----------------------------------------------------------------------------------------------
 
-
+/*
 
 ---------  symptoms v6
 
@@ -394,7 +394,7 @@ from combine
 where year(enct_date) between 2016 and 2022
 group by cube(enct_date, symptoms, gender, age_group, race, covid_diagnosis, covid_lab_test, covid_classifier)
 
-
+*/
 
 
 
@@ -604,6 +604,48 @@ symptom as (select
     having sum(negation) >0
 ),
 
+/*
+-- symptom from cui code, same result as using snomed
+symptom as (select 
+        encounter_id
+        , symptoms
+    from (SELECT encounter.reference_id_aa as encounter_id
+        , case codecoding.code when 'C0027424' then 'Congestion or runny nose'
+                        when 'C1260880' then 'Congestion or runny nose'
+                        when 'C0010200' then 'Cough'
+                        when 'C0850149' then 'Cough'
+                        when 'C0239134' then 'Cough'
+                        when 'C0011991' then 'Diarrhea'
+                        when 'C0015672' then 'Fatigue'
+                        when 'C0231218' then 'Fatigue'
+                        when 'C0085593' then 'Fever or chills'
+                        when 'C0687681' then 'Fever or chills'
+                        when 'C1959900' then 'Fever or chills'
+                        when 'C0015967' then 'Fever or chills'
+                        when 'C0018681' then 'Headache'
+                        when 'C0231528' then 'Muscle or body aches'
+                        when 'C0027497' then 'Nausea or vomiting'
+                        when 'C0042963' then 'Nausea or vomiting'
+                        when 'C0003126' then 'New loss of taste or smell'
+                        when 'C2364111' then 'New loss of taste or smell'
+                        when 'C0013404' then 'Shortness of breath or difficulty breathing'
+                        when 'C0242429' then 'Sore throat'
+                        end as symptoms
+    , case when modext.url = 'http://fhir-registry.smarthealthit.org/StructureDefinition/nlp-polarity' and modext.valueinteger = 0 then 1 
+            when  modext.url = 'http://fhir-registry.smarthealthit.org/StructureDefinition/nlp-polarity' and modext.valueinteger = -1 then -1
+            end as negation
+    , case when modext.valuedate is not null then modext.valuedate end as symp_date
+FROM "delta"."observation"
+    , unnest(modifierExtension) t(modext)
+    , unnest(code.coding) t(codecoding)
+where codecoding.code in ('C0027424','C1260880','C0010200','C0850149','C0239134','C0011991','C0015672','C0231218','C0085593','C0687681','C1959900','C0015967','C0018681','C0231528','C0027497','C0042963','C0003126','C2364111','C0013404','C0242429')
+        )
+group by encounter_id, symptoms
+having sum(negation) >0
+),
+*/
+
+
 fhir_patient as (SELECT DISTINCT
     gender
 , "date"("concat"(birthdate, '-01-01')) dob
@@ -658,7 +700,7 @@ combine as (
 select distinct e.encounter_id
     , e.subject_id
     , date(date_trunc('month', date_parse(e.enct_date,'%Y-%m-%d')))  as enct_date 
-    , s.symptoms
+    , case when s.symptoms is null then 'No Covid Symptoms' else s.symptoms end as symptoms
     , case when p.gender in ('male', 'female') then gender else 'Missing' end as gender
     , (CASE WHEN (p.age < 19) THEN '0-18' 
             WHEN (p.age BETWEEN 19 AND 44) THEN '19-44' 
