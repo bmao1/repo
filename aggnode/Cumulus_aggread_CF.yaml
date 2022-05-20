@@ -1,0 +1,271 @@
+# AWS api gatewat to lambda. Allow access to agg node via http api
+# aws cloudformation deploy --template-file /Path/Cumulus_aggread_CF.yaml --stack-name aggread --capabilities CAPABILITY_NAMED_IAM
+
+
+Parameters:
+  apiGatewayName:
+    Type: String
+    Default: cumulus_agg
+  apiGatewayStageName:
+    Type: String
+    Default: $default
+  apiGatewayHTTPMethod:
+    Type: String
+    Default: GET
+  aggReadlambdaFunctionName:
+    Type: String
+    #AllowedPattern: "[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0-9]+"
+    Default: cumulus_aggread
+  aggAuthlambdaFunctionName:
+    Type: String
+    #AllowedPattern: "[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0-9]+"
+    Default: cumulus_aggauth
+
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  pandasLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: pandas-psycopg2-layer-auth
+      CompatibleRuntimes:
+        - python3.9
+      Content:
+        S3Bucket: s3-for-athena-bintest2
+        S3Key: transition/lambda_layer/pandas.zip
+      Description: pandas_psycopg2_boto3
+
+  ## flask layer no longer in use 
+  #flaskLayer:
+  #  Type: AWS::Lambda::LayerVersion
+  #  Properties:
+  #    LayerName: flask-layer-auth
+  #    CompatibleRuntimes:
+  #      - python3.9
+  #    Content:
+  #      S3Bucket: s3-for-athena-bintest2
+  #      S3Key: transition/lambda_layer/flask.zip
+  #    Description: flask
+
+  aggReadLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref aggReadlambdaFunctionName
+      Code:
+        S3Bucket: s3-for-athena-bintest2
+        S3Key: transition/code/aggread.zip
+      Description: Lambda-read-aggnode
+      Handler: index.lambda_handler
+      MemorySize: 512
+      Timeout: 120
+      Role: !GetAtt aggReadLambdaExecutionRole.Arn
+      Runtime: python3.9
+      Layers:
+        - !Ref pandasLayer
+        #- !Ref flaskLayer
+
+  aggAuthLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref aggAuthlambdaFunctionName
+      Code:
+        S3Bucket: s3-for-athena-bintest2
+        S3Key: transition/code/aggauth.zip
+      Description: aggnode-basicauth
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Timeout: 30
+      Role: !GetAtt aggAuthLambdaExecutionRole.Arn
+      Runtime: python3.9
+
+  aggAuthLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  #LambdaExecutionRole:
+  aggReadLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonAthenaFullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource:
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${aggReadlambdaFunctionName}:*
+          PolicyName: lambdalog
+
+  apiGateway:
+      Type: AWS::ApiGatewayV2::Api
+      Properties:
+        Name: !Ref apiGatewayName
+        ProtocolType: HTTP
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId:
+        Ref: apiGateway
+      StageName: !Ref apiGatewayStageName
+      Description: default Stage
+      AutoDeploy: true
+
+
+  # allow api to call lambda
+  aggReadInvokePermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - aggReadLambda
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName: !Ref aggReadlambdaFunctionName
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+        - ''
+        - - 'arn:aws:execute-api:'
+          - Ref: AWS::Region
+          - ":"
+          - Ref: AWS::AccountId
+          - ":"
+          - Ref: apiGateway
+          - "/*"
+
+  authInvokePermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - aggReadLambda
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName: !Ref aggAuthlambdaFunctionName
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+        - ''
+        - - 'arn:aws:execute-api:'
+          - Ref: AWS::Region
+          - ":"
+          - Ref: AWS::AccountId
+          - ":"
+          - Ref: apiGateway
+          - "/*"
+
+  Integration1:
+    Type: AWS::ApiGatewayV2::Integration
+    DependsOn:
+      - aggReadLambda
+    Properties:
+      ApiId:
+        Ref: apiGateway
+      ConnectionType: INTERNET
+      Description: Lambda integration
+      IntegrationType: AWS_PROXY
+      IntegrationMethod: POST
+      PayloadFormatVersion: "2.0"
+      IntegrationUri: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${aggReadlambdaFunctionName}"
+
+  ApiRoute1:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: apiGateway
+      RouteKey: "GET /read_agg/meta"
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref Authorizer
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref Integration1
+
+  Integration2:
+    Type: AWS::ApiGatewayV2::Integration
+    DependsOn:
+      - aggReadLambda
+    Properties:
+      ApiId:
+        Ref: apiGateway
+      ConnectionType: INTERNET
+      Description: Lambda integration
+      IntegrationType: AWS_PROXY
+      IntegrationMethod: POST
+      PayloadFormatVersion: "2.0"
+      IntegrationUri: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${aggReadlambdaFunctionName}"
+
+  ApiRoute2:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: apiGateway
+      RouteKey: "GET /read_agg/cube"
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref Authorizer
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref Integration2
+
+  Authorizer:
+    Type: 'AWS::ApiGatewayV2::Authorizer'
+    DependsOn: 
+      - aggAuthLambda
+      - apiGateway
+    Properties:
+      Name: basicAuthorizer
+      ApiId:
+        Ref: apiGateway
+      AuthorizerPayloadFormatVersion: 1.0
+      AuthorizerResultTtlInSeconds: 60
+      AuthorizerType: REQUEST
+      AuthorizerUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${aggAuthlambdaFunctionName}/invocations'
+      EnableSimpleResponses: false 
+      IdentitySource:
+        - $request.header.Authorization
+
+  ApiDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn: 
+      - apiGateway
+      - ApiRoute1
+      - ApiRoute2
+    Properties:
+      ApiId:
+          Ref: apiGateway
+
+Outputs:
+  RootUrl:
+    Description: Root URL of the API gateway
+    Value:
+      Fn::Join:
+      - ''
+      - - https://
+        - Ref: apiGateway
+        - ".execute-api."
+        - Ref: AWS::Region
+        - ".amazonaws.com"
