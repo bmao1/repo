@@ -30,24 +30,24 @@ To reduce the data size for CDC demo while preserve the patient symptoms, only t
 
 ## ctakes_raw.py
 This code has been used to support the team to investigate the raw output from cTAKES for BCH clinical notes. It helps to explore the possible use cases for cTAKES with real data feed, but it's not being used in the CDC demo.
-	- Notes are extracted from cohort.csv and passed to cTAKES. The raw output is located in s3://s3-for-athena-bintest2/data/nlp/bch_ctakes
-	- A glue crawler is then used to create external table in Athena with inferred schema. https://us-east-2.console.aws.amazon.com/glue/home?region=us-east-2#crawler:name=bch_ctakes_raw
+- Notes are extracted from cohort.csv and passed to cTAKES. The raw output is located in s3://s3-for-athena-bintest2/data/nlp/bch_ctakes
+- A glue crawler is then used to create external table in Athena with inferred schema. https://us-east-2.console.aws.amazon.com/glue/home?region=us-east-2#crawler:name=bch_ctakes_raw
 
 ## cpt4.csv (not in use)
 Exploratory: occurrence of procedure code in i2b2
 
 # Output Data
 The data is located in `s3://s3-for-athena-bintest2/transition/i2b2_to_fhir/data`
-	- "Condition.ndjson.gz": From BCH i2b2 Diagnosis
-	- "DocumentReference.ndjson.gz": DELETED due to PHI in notes. Find it on my laptop /Users/binmao/i2b2DB/bch_mapping/backup_0314/DocumentReference.ndjson.gz
-	- "Encounter.ndjson.gz": From i2b2 visit dimension. Not used in CDC demo
-	- "Observation_classifier_202204.ndjson.gz": The latest version of covid classifier
-	- "Observation_ctakes_all.ndjson.gz": Clinical notes to FHIR by cTAKES
-	- "Observation_i2b2.ndjson.gz": From BCH i2b2 PCR lab test
-	- "Patient.ndjson.gz": From BCH i2b2 patient
-	- "ctakes_raw_v2.ndjson.gz": All ctakes raw output with negation for exploratory analysis
-	- "encounter_mapping.json.gz": BCH ENCOUNTER_NUM to uuid mapping, need to re-produce the FHIR data in this folder
-	- "patient_mapping.json.gz": BCH PATIENT_NUM to uuid mapping, need to re-produce the FHIR data in this folder
+- "Condition.ndjson.gz": From BCH i2b2 Diagnosis
+- "DocumentReference.ndjson.gz": DELETED due to PHI in notes. Find it on my laptop /Users/binmao/i2b2DB/bch_mapping/backup_0314/DocumentReference.ndjson.gz
+- "Encounter.ndjson.gz": From i2b2 visit dimension. Not used in CDC demo
+- "Observation_classifier_202204.ndjson.gz": The latest version of covid classifier
+- "Observation_ctakes_all.ndjson.gz": Clinical notes to FHIR by cTAKES
+- "Observation_i2b2.ndjson.gz": From BCH i2b2 PCR lab test
+- "Patient.ndjson.gz": From BCH i2b2 patient
+- "ctakes_raw_v2.ndjson.gz": All ctakes raw output with negation for exploratory analysis
+- "encounter_mapping.json.gz": BCH ENCOUNTER_NUM to uuid mapping, need to re-produce the FHIR data in this folder
+- "patient_mapping.json.gz": BCH PATIENT_NUM to uuid mapping, need to re-produce the FHIR data in this folder
 
 
 
